@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Category entry check: compare App Store categories before you build an app</title>
+<meta name="description" content="Paste PeekPanda market leaderboard answers for a few App Store categories and compare them side by side: estimated revenue and downloads at #10, #25 and #50, top-3 concentration, young apps, review bases and paid-ad, organic and search pressure. Runs in your browser.">
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 1080px; margin: 2rem auto; padding: 0 1rem; color: #1b1b1f; }
+  textarea { width: 100%; min-height: 140px; font: 13px ui-monospace, monospace; }
+  button, select, input { padding: .4rem .6rem; margin: .5rem .5rem .5rem 0; }
+  button { cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; margin: .5rem 0; font-size: 13px; }
+  th, td { border-bottom: 1px solid #ddd; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+  th:first-child, td:first-child { color: #555; width: 26%; }
+  .muted { color: #777; } .err { color: #cf222e; white-space: pre-wrap; }
+  label { font-weight: 600; font-size: 14px; }
+  pre { background: #f6f8fa; padding: .75rem; overflow-x: auto; font-size: 13px; }
+  footer { margin-top: 2.5rem; font-size: 13px; color: #555; }
+  a { color: #0969da; }
+  .bar { display: inline-block; height: 8px; background: #8c6cf2; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h1>Category entry check</h1>
+<p>Thinking about an app in a new App Store category? Before you build, compare a few categories on the same chart: what the apps at #10, #25 and #50 are estimated to make and download, how much of the estimated revenue the top 3 hold, how many apps released in the last two years made the chart, how many ratings the smallest top-25 app has, and how many charting apps run paid ads, get organic posts or rank top 10 for searches. The data is one stored leaderboard read per category from <a href="https://peekpanda.com">PeekPanda</a>, an iOS competitor catalogue. Nothing leaves your browser; this page never calls the API.</p>
+<p class="muted">Download and revenue figures are estimates, not measured results. A chart rank is where an app sat on that day, not why. "Not collected" is not zero. The page lines up the evidence; it does not score or pick a category.</p>
+<label for="raw">Leaderboard answers</label>
+<textarea id="raw" spellcheck="false" placeholder="One GET /v1/market/leaderboard answer, an array of several (one per category), or the file the command-line version saves with --save"></textarea>
+<div>
+  Chart <select id="chart"><option>grossing</option><option>free</option><option>paid</option></select>
+  Rows per category <input id="top" type="number" min="1" max="100" value="50" style="width:5em">
+  Young = released within <input id="young" type="number" min="1" value="24" style="width:4em"> months
+</div>
+<div>
+  <button id="go">Compare</button>
+  <button id="ex">Load example data</button>
+  <button id="csv" disabled>Download CSV</button>
+</div>
+<div id="err" class="err"></div>
+<div id="out"></div>
+
+<h2>Where to get the JSON</h2>
+<p>Each answer needs a PeekPanda account and an API key with scope <code>context:read</code>, counts as one call toward your plan's daily API and MCP allowance, and only reads stored evidence. Over MCP the same read is the <code>get_market</code> tool with action <code>leaderboard</code>. See <a href="https://peekpanda.com/docs/market-leaderboard">Get market leaderboard</a> (the allowance per plan is on the plans page):</p>
+<pre>curl --get 'https://api.peekpanda.com/v1/market/leaderboard' \
+  --header "Authorization: Bearer $PEEKPANDA_TOKEN" \
+  --data-urlencode 'country=us' --data-urlencode 'categoryId=6013' \
+  --data-urlencode 'chartType=grossing' > health.json</pre>
+<p>Category IDs are Apple's: 6013 Health &amp; Fitness, 6007 Productivity, 6023 Food &amp; Drink, 6015 Finance, 6017 Education, 6012 Lifestyle, 6008 Photo &amp; Video and so on (<code>node cli.js --list</code> prints all 27). Put several answers in one JSON array to compare them.</p>
+<footer>Part of a set of small PeekPanda API samples. Source and command-line version: <a href="https://github.com/fdarkaou/category-entry-check">github.com/fdarkaou/category-entry-check</a> (MIT). Example data is made up.</footer>
+
+<script type="module">
+import { categoryReport, buildReport, toCsv, estimateText, compact, BAR_RANKS } from './entry.js';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
+const of = (a, b) => (b ? `${a}/${b}` : 'not collected');
+let current = null;
+function build(text) {
+  const j = JSON.parse(text);
+  const arr = Array.isArray(j) ? j : [j];
+  const opts = { chartType: $('chart').value, top: Math.min(100, Math.max(1, Number($('top').value) || 50)), youngMonths: Number($('young').value) || 24 };
+  return buildReport(arr.map((x) => categoryReport(x.raw ?? x, { ...opts, label: x.label ?? null })));
+}
+function render(rep) {
+  const cats = rep.categories;
+  let h = `<h2>${esc(rep.chartType)} chart, ${esc(String(rep.country ?? '').toUpperCase())}, ${esc(rep.chartDays.join(', '))}</h2>`;
+  if (rep.callouts.length) h += '<ul>' + rep.callouts.map((l) => `<li>${esc(l)}</li>`).join('') + '</ul>';
+  const maxMid = Math.max(1, ...cats.flatMap((c) => c.bar.map((b) => (b.revenue.kind === 'range' ? b.revenue.high : 0))));
+  h += `<table><tr><th></th>${cats.map((c) => `<th>${esc(c.name)}${c.stale ? ' <span class="muted">(stale)</span>' : ''}</th>`).join('')}</tr>`;
+  const row = (label, f) => { h += `<tr><td>${esc(label)}</td>${cats.map((c) => `<td>${f(c)}</td>`).join('')}</tr>`; };
+  for (const k of BAR_RANKS) if (cats.some((c) => c.bar.some((b) => b.rank === k))) row(`Revenue / mo at #${k}`, (c) => {
+    const b = c.bar.find((x) => x.rank === k); if (!b) return '';
+    if (!b.name) return '<span class="muted">no row</span>';
+    const w = b.revenue.kind === 'range' ? Math.max(2, Math.round((b.revenue.mid / maxMid) * 120)) : 0;
+    return `${w ? `<span class="bar" style="width:${w}px"></span>` : ''}${esc(estimateText(b.revenue, '$'))}<br><span class="muted">${esc(b.name)}</span>`;
+  });
+  for (const k of BAR_RANKS) if (cats.some((c) => c.bar.some((b) => b.rank === k))) row(`Downloads / mo at #${k}`, (c) => { const b = c.bar.find((x) => x.rank === k); return b ? esc(b.name ? estimateText(b.installs) : 'no row') : ''; });
+  row('Top 3 share of revenue mids', (c) => (c.concentration ? `${pct(c.concentration.top3Share)} <span class="muted">of ${c.concentration.rangedApps} ranged</span>` : '<span class="muted">too few ranges</span>'));
+  row('Revenue estimates: range / below floor / none', (c) => `${c.revenueKinds.range} / ${c.revenueKinds.belowFloor} / ${c.revenueKinds.none}`);
+  row(`Released in last ${cats[0]?.young.months} months`, (c) => (c.young.count == null ? 'unknown' : `${c.young.count}${c.young.best ? ` <span class="muted">best #${c.young.best.rank} ${esc(c.young.best.name)}</span>` : ''}`));
+  row('Median ratings, top 10', (c) => esc(compact(c.reviews.medianTop10) || '–'));
+  row('Smallest review base, top 25', (c) => (c.reviews.smallestTop25 ? `${esc(compact(c.reviews.smallestTop25.ratingCount))} <span class="muted">#${c.reviews.smallestTop25.rank} ${esc(c.reviews.smallestTop25.name)}</span>` : '–'));
+  row('Distinct developers', (c) => `${c.developers.distinct}${c.developers.busiest ? ` <span class="muted">${esc(c.developers.busiest.name)}: ${c.developers.busiest.apps}</span>` : ''}`);
+  row('Apps running paid ads', (c) => of(c.paid.buying, c.paid.collected));
+  row('Live ads (started 7d)', (c) => (c.paid.collected ? `${esc(compact(c.paid.liveAds))} (${esc(compact(c.paid.started7d))})` : '–'));
+  row('Apps with organic posts', (c) => of(c.organic.withPosts, c.organic.collected));
+  row('Apps top 10 for a search', (c) => of(c.search.withTop10, c.search.collected));
+  row('Chart day: gainers / losers / new', (c) => [c.churn.gainers, c.churn.losers, c.churn.newEntrants].map((v) => v ?? '–').join(' / '));
+  $('out').innerHTML = h + '</table>';
+}
+$('go').onclick = () => {
+  $('err').textContent = '';
+  try { current = build($('raw').value); render(current); $('csv').disabled = false; }
+  catch (e) { $('err').textContent = e.message; $('csv').disabled = true; }
+};
+$('ex').onclick = async () => {
+  $('raw').value = await (await fetch('examples/run.json')).text();
+  $('chart').value = 'grossing';
+  $('go').click();
+};
+$('csv').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([toCsv(current)], { type: 'text/csv' }));
+  a.download = 'category-entry-check.csv'; a.click();
+};
+if (location.hash === '#example') $('ex').click();
+</script>
+</body>
+</html>

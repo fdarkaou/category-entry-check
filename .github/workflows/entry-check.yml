@@ -1,0 +1,38 @@
+# Example: on the 1st of each month, compare your shortlist of App Store categories and keep the result.
+# Disabled until you set the repository variable ENABLE_ENTRY_CHECK=true.
+# Secrets: PEEKPANDA_TOKEN (PeekPanda API key, required), ENTRY_CHECK_WEBHOOK_URL (optional Slack or Discord webhook).
+# Variables: ENTRY_CATEGORIES (required, e.g. "Health & Fitness,Productivity,Food & Drink"),
+#            ENTRY_COUNTRY (optional, default us), ENTRY_CHART (optional, default grossing).
+# Calls per run: 1 per category. Read-only; nothing is collected or refreshed.
+name: entry-check
+on:
+  schedule:
+    - cron: '0 7 1 * *'
+  workflow_dispatch:
+jobs:
+  check:
+    if: vars.ENABLE_ENTRY_CHECK == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: category entry check
+        env:
+          PEEKPANDA_TOKEN: ${{ secrets.PEEKPANDA_TOKEN }}
+          ENTRY_CATEGORIES: ${{ vars.ENTRY_CATEGORIES }}
+          ENTRY_COUNTRY: ${{ vars.ENTRY_COUNTRY || 'us' }}
+          ENTRY_CHART: ${{ vars.ENTRY_CHART || 'grossing' }}
+          ENTRY_CHECK_WEBHOOK_URL: ${{ secrets.ENTRY_CHECK_WEBHOOK_URL }}
+        run: |
+          set -- --categories "$ENTRY_CATEGORIES" --country "$ENTRY_COUNTRY" --chart "$ENTRY_CHART" --save entry-run.json
+          if [ -n "$ENTRY_CHECK_WEBHOOK_URL" ]; then set -- "$@" --webhook "$ENTRY_CHECK_WEBHOOK_URL"; fi
+          node cli.js "$@" >> "$GITHUB_STEP_SUMMARY"
+          node cli.js --file entry-run.json --chart "$ENTRY_CHART" --format csv > entry-check.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: entry-check-${{ github.run_id }}
+          path: |
+            entry-run.json
+            entry-check.csv

@@ -1,0 +1,14 @@
+{
+  "name": "category-entry-check",
+  "version": "1.0.0",
+  "description": "Compare App Store categories before you build: what the #10, #25 and #50 apps are estimated to make, how concentrated the top is, how many young apps chart, review bases, and paid-ad, organic and search pressure. One PeekPanda market leaderboard read per category; Markdown/CSV/JSON and an optional Slack or Discord post.",
+  "type": "module",
+  "bin": { "category-entry-check": "cli.js" },
+  "scripts": { "test": "node --test test/" },
+  "engines": { "node": ">=18" },
+  "license": "MIT",
+  "author": "Fekri Darkaoui",
+  "repository": { "type": "git", "url": "https://github.com/fdarkaou/category-entry-check.git" },
+  "homepage": "https://fdarkaou.github.io/category-entry-check/",
+  "keywords": ["app-store", "ios", "market-research", "app-idea", "category", "top-charts", "mcp", "peekpanda"]
+}
